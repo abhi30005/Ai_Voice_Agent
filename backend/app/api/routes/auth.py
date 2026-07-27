@@ -7,8 +7,14 @@ from app.services import auth_service
 from app.core.security import create_access_token
 from app.config import settings
 from app.api.dependencies import get_current_active_user
+from app.database.mongodb import db
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+@router.get("/check-email")
+async def check_email(email: str):
+    user = await db.users.find_one({"email": email})
+    return {"exists": user is not None}
 
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate):

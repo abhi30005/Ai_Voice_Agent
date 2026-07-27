@@ -303,6 +303,13 @@ export function useVoiceSocket() {
     if (isRecording) {
       stopRecording();
     } else {
+      // Initialize/resume playback context immediately on user interaction
+      // to bypass strict browser autoplay policies
+      getPlaybackContext();
+      if (playbackContextRef.current?.state === 'suspended') {
+        playbackContextRef.current.resume().catch(console.warn);
+      }
+      
       if (!isConnected) connect();
       startRecording();
     }
@@ -310,6 +317,12 @@ export function useVoiceSocket() {
   
   const sendTextMessage = (text: string) => {
     if (!text.trim()) return;
+    
+    // Initialize playback context on user interaction
+    getPlaybackContext();
+    if (playbackContextRef.current?.state === 'suspended') {
+      playbackContextRef.current.resume().catch(console.warn);
+    }
     
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       connect();

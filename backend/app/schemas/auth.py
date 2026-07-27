@@ -9,4 +9,4 @@ class TokenData(BaseModel):
 
 class LoginRequest(BaseModel):
     email: str
-    password: str
+    password: str | None = None

@@ -6,7 +6,7 @@ from app.database.mongodb import connect_to_mongo, close_mongo_connection
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import logger
 
-from app.api.routes import auth, conversations, voice, documents
+from app.api.routes import auth, conversations, voice, documents, settings as settings_route, analytics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,6 +24,8 @@ app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(voice.router)
 app.include_router(documents.router)
+app.include_router(settings_route.router)
+app.include_router(analytics.router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -22,7 +22,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None), con
         user = "test_user_id"
         
     await websocket.accept()
-    pipeline = VoicePipeline(websocket, conversation_id)
+    pipeline = VoicePipeline(websocket, conversation_id, user)
     logger.info(f"WebSocket connected for conversation {conversation_id}, user {user}")
     
     try:

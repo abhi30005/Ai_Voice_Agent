@@ -10,6 +10,8 @@ from app.services.voice.tts_service import tts_service
 from app.services.agent.agent import agent_app
 from app.services.agent.state import AgentState
 from app.core.logging import logger
+from app.database.mongodb import db
+from bson import ObjectId
 
 
 class VoicePipeline:
@@ -28,9 +30,10 @@ class VoicePipeline:
     MIN_AUDIO_DURATION = 0.5
     MIN_AUDIO_BYTES = int(16000 * 2 * MIN_AUDIO_DURATION)  # 16000 samples/sec * 2 bytes/sample * duration
     
-    def __init__(self, websocket: WebSocket, conversation_id: str):
+    def __init__(self, websocket: WebSocket, conversation_id: str, user_id: str):
         self.websocket = websocket
         self.conversation_id = conversation_id
+        self.user_id = user_id
         self.audio_buffer = bytearray()
         self.is_processing = False
         self.current_task: asyncio.Task | None = None
@@ -156,8 +159,8 @@ class VoicePipeline:
         """Full pipeline: STT → Agent → TTS."""
         try:
             # 1. STT — Transcribe audio to text
-            await self.websocket.send_json({"type": "thinking"})
-            transcript = await asyncio.to_thread(stt_service.transcribe, audio_data)
+            logger.info(f"Transcribing audio frame: {len(audio_data)} bytes")
+            transcript = await stt_service.transcribe(audio_data)
             
             if not transcript:
                 logger.info("STT returned empty transcript. Skipping.")
@@ -201,7 +204,18 @@ class VoicePipeline:
             # 2. TTS — Convert response to audio (only if TTS is enabled)
             if self.tts_enabled:
                 await self.websocket.send_json({"type": "speaking_started"})
-                tts_audio = await asyncio.to_thread(tts_service.synthesize, response_text)
+                
+                # Fetch user's voice preference
+                voice_name = "alloy"
+                try:
+                    if self.user_id != "test_user_id":
+                        settings_doc = await db.settings.find_one({"user_id": ObjectId(self.user_id)})
+                        if settings_doc and "voice" in settings_doc:
+                            voice_name = settings_doc["voice"].get("voice_id", "alloy")
+                except Exception as e:
+                    logger.error(f"Failed to fetch voice settings for user {self.user_id}: {e}")
+                
+                tts_audio = await asyncio.to_thread(tts_service.synthesize, response_text, voice_name)
                 
                 if tts_audio and len(tts_audio) > 0:
                     b64_audio = base64.b64encode(tts_audio).decode('utf-8')

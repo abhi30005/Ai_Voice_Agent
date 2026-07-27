@@ -11,27 +11,35 @@ class TTSService:
         
         if self.provider == "elevenlabs":
             if not self.elevenlabs_api_key:
-                logger.warning("ElevenLabs API key is not set! Falling back to gTTS.")
-                self.provider = "gtts"
+                logger.warning("ElevenLabs API key is not set! Falling back to openai.")
+                self.provider = "openai"
             else:
                 logger.info("Configured TTS provider: elevenlabs")
         elif self.provider == "gtts":
-            logger.info("Configured TTS provider: gtts (Google Text-to-Speech)")
+            logger.info("Configured TTS provider: gtts (Google Text-to-Speech) - Warning: may be unreliable")
+        elif self.provider == "openai":
+            logger.info("Configured TTS provider: openai")
         else:
-            logger.info(f"Configured TTS provider: {self.provider}, falling back to gtts")
-            self.provider = "gtts"
+            logger.info(f"Configured TTS provider: {self.provider}, falling back to openai")
+            self.provider = "openai"
 
-    def synthesize(self, text: str) -> bytes:
+    def synthesize(self, text: str, voice_name: str = "alloy") -> bytes:
         """
         Synthesizes text to an MP3 audio buffer.
-        Falls back through providers: elevenlabs → gtts → silent wav
+        Falls back through providers: elevenlabs → openai → gtts → silent wav
         """
         if self.provider == "elevenlabs":
             audio = self._elevenlabs_audio(text)
             if audio and not self._is_silent_wav(audio):
                 return audio
-            # ElevenLabs failed, fall through to gTTS
-            logger.warning("ElevenLabs failed, falling back to gTTS")
+            logger.warning("ElevenLabs failed, falling back to OpenAI")
+            self.provider = "openai"
+            
+        if self.provider == "openai" or not hasattr(self, "_openai_audio"):
+            audio = self._openai_audio(text, voice_name)
+            if audio and not self._is_silent_wav(audio):
+                return audio
+            logger.warning("OpenAI TTS failed, falling back to gTTS")
         
         # Try gTTS (free Google TTS)
         audio = self._gtts_audio(text)
@@ -76,6 +84,38 @@ class TTSService:
         except Exception as e:
             logger.error(f"ElevenLabs TTS exception: {e}")
             return self._silent_wav()
+
+    def _openai_audio(self, text: str, voice_name: str) -> bytes | None:
+        """OpenAI Text-to-Speech API"""
+        api_key = settings.OPENAI_API_KEY
+        if not api_key:
+            logger.warning("OpenAI API key missing for TTS.")
+            return None
+            
+        url = "https://api.openai.com/v1/audio/speech"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "tts-1",
+            "input": text,
+            "voice": voice_name,
+            "response_format": "mp3"
+        }
+        
+        try:
+            with httpx.Client() as client:
+                response = client.post(url, json=payload, headers=headers, timeout=30.0)
+                if response.status_code == 200:
+                    logger.info(f"OpenAI TTS success: {len(response.content)} bytes")
+                    return response.content
+                else:
+                    logger.error(f"OpenAI TTS error: {response.status_code} - {response.text}")
+                    return None
+        except Exception as e:
+            logger.error(f"OpenAI TTS exception: {e}")
+            return None
 
     def _gtts_audio(self, text: str) -> bytes | None:
         """Google Text-to-Speech — free, no API key needed. Returns MP3 bytes."""

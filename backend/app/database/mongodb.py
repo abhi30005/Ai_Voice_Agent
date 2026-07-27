@@ -5,11 +5,13 @@ from app.core.logging import logger
 class Database:
     client: AsyncIOMotorClient = None
     
-    @classmethod
-    def get_db(cls):
-        if cls.client is None:
+    def get_db(self):
+        if self.client is None:
             raise Exception("Database client is not initialized")
-        return cls.client[settings.MONGODB_DATABASE]
+        return self.client[settings.MONGODB_DATABASE]
+
+    def __getattr__(self, name):
+        return getattr(self.get_db(), name)
 
 db = Database()
 
