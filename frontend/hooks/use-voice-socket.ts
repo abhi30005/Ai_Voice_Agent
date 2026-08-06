@@ -7,36 +7,12 @@ export interface ChatMessage {
   isThinking?: boolean;
 }
 
-/**
- * Downsamples audio from the browser's native sample rate to 16kHz.
- * This is critical because browsers often use 44.1kHz or 48kHz,
- * but our backend STT expects 16kHz audio.
- */
-function downsampleBuffer(buffer: Float32Array, inputSampleRate: number, outputSampleRate: number): Float32Array {
-  if (inputSampleRate === outputSampleRate) {
-    return buffer;
+// Add TypeScript support for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
   }
-  if (inputSampleRate < outputSampleRate) {
-    throw new Error('Input sample rate must be greater than output sample rate');
-  }
-  const ratio = inputSampleRate / outputSampleRate;
-  const newLength = Math.round(buffer.length / ratio);
-  const result = new Float32Array(newLength);
-  let offsetResult = 0;
-  let offsetBuffer = 0;
-  while (offsetResult < result.length) {
-    const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
-    let accum = 0;
-    let count = 0;
-    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-      accum += buffer[i];
-      count++;
-    }
-    result[offsetResult] = accum / Math.max(1, count);
-    offsetResult++;
-    offsetBuffer = nextOffsetBuffer;
-  }
-  return result;
 }
 
 export function useVoiceSocket() {
@@ -47,13 +23,10 @@ export function useVoiceSocket() {
   const [ttsEnabled, setTtsEnabled] = useState(true);
 
   const socketRef = useRef<WebSocket | null>(null);
-  const recordingRef = useRef<{
-    source: MediaStreamAudioSourceNode;
-    processor: ScriptProcessorNode;
-    stream: MediaStream;
-    context: AudioContext;
-  } | null>(null);
   
+  // Web Speech API reference
+  const recognitionRef = useRef<any>(null);
+
   // Separate playback context — never share with recording
   const playbackContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
@@ -134,7 +107,9 @@ export function useVoiceSocket() {
   const connect = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket('ws://localhost:8000/api/voice/ws');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('vocalis_token') : '';
+    const wsUrl = `ws://localhost:8000/api/voice/ws${token ? `?token=${token}` : ''}`;
+    const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
       console.log('Connected to Voice Agent');
@@ -147,11 +122,8 @@ export function useVoiceSocket() {
         
         switch (data.type) {
           case 'transcript':
-            setMessages(prev => [...prev.filter(m => !m.isThinking), {
-              id: Date.now().toString(),
-              role: 'user',
-              content: data.text
-            }]);
+            // With Web Speech API, we already display the text locally. We can ignore backend transcripts
+            // unless they are corrections, but let's just ignore to prevent duplicates.
             break;
           case 'thinking':
             setMessages(prev => {
@@ -183,7 +155,7 @@ export function useVoiceSocket() {
             // Will be set false by audio source.onended
             break;
           case 'thinking_done':
-            // Explicitly clear thinking indicator (e.g., when STT found no speech)
+            // Explicitly clear thinking indicator
             setMessages(prev => [...prev.filter(m => !m.isThinking)]);
             break;
           case 'error':
@@ -216,106 +188,7 @@ export function useVoiceSocket() {
     }
   }, []);
 
-  const startRecording = async () => {
-    try {
-      // Ensure WebSocket is connected first
-      if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-        connect();
-        // Wait a moment for connection
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 16000, // Request 16kHz (browser may ignore this)
-        } 
-      });
-      
-      // Create a SEPARATE AudioContext for recording
-      // Use browser's default sample rate — we'll resample to 16kHz manually
-      const recordingContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const source = recordingContext.createMediaStreamSource(stream);
-      const processor = recordingContext.createScriptProcessor(4096, 1, 1);
-      
-      const actualSampleRate = recordingContext.sampleRate;
-      console.log(`Recording at browser sample rate: ${actualSampleRate}Hz, will downsample to 16000Hz`);
-      
-      source.connect(processor);
-      processor.connect(recordingContext.destination);
-      
-      processor.onaudioprocess = (e) => {
-        if (socketRef.current?.readyState === WebSocket.OPEN) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          
-          // Downsample from browser's native rate to 16kHz
-          const downsampled = downsampleBuffer(inputData, actualSampleRate, 16000);
-          
-          // Convert Float32 to Int16 PCM
-          const int16Data = new Int16Array(downsampled.length);
-          for (let i = 0; i < downsampled.length; i++) {
-            const s = Math.max(-1, Math.min(1, downsampled[i]));
-            int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
-          
-          // Convert to base64
-          const bytes = new Uint8Array(int16Data.buffer);
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
-          }
-          const base64data = btoa(binary);
-          
-          socketRef.current.send(JSON.stringify({
-            type: 'audio_chunk',
-            data: base64data
-          }));
-        }
-      };
-
-      recordingRef.current = { source, processor, stream, context: recordingContext };
-      setIsRecording(true);
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (recordingRef.current) {
-      const { source, processor, stream, context } = recordingRef.current;
-      source.disconnect();
-      processor.disconnect();
-      stream.getTracks().forEach(track => track.stop());
-      context.close().catch(() => {});
-      recordingRef.current = null;
-      setIsRecording(false);
-      
-      // Tell backend to process whatever audio is buffered
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: 'stop_recording' }));
-      }
-    }
-  };
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      // Initialize/resume playback context immediately on user interaction
-      // to bypass strict browser autoplay policies
-      getPlaybackContext();
-      if (playbackContextRef.current?.state === 'suspended') {
-        playbackContextRef.current.resume().catch(console.warn);
-      }
-      
-      if (!isConnected) connect();
-      startRecording();
-    }
-  };
-  
-  const sendTextMessage = (text: string) => {
+  const sendTextMessage = (text: string, skipUiUpdate = false) => {
     if (!text.trim()) return;
     
     // Initialize playback context on user interaction
@@ -324,28 +197,128 @@ export function useVoiceSocket() {
       playbackContextRef.current.resume().catch(console.warn);
     }
     
+    const send = () => {
+      socketRef.current?.send(JSON.stringify({ type: 'text_message', text }));
+      if (!skipUiUpdate) {
+        setMessages(prev => [...prev.filter(m => m.id !== 'interim'), {
+          id: Date.now().toString(),
+          role: 'user',
+          content: text
+        }]);
+      }
+    };
+
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       connect();
       // Queue the message to send after connection
       setTimeout(() => {
         if (socketRef.current?.readyState === WebSocket.OPEN) {
-          socketRef.current.send(JSON.stringify({ type: 'text_message', text }));
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'user',
-            content: text
-          }]);
+          send();
         }
       }, 600);
       return;
     }
     
-    socketRef.current.send(JSON.stringify({ type: 'text_message', text }));
-    setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text
-    }]);
+    send();
+  };
+
+  const startRecording = async () => {
+    try {
+      // Ensure WebSocket is connected first
+      if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+        connect();
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (!SpeechRecognition) {
+        console.error("Web Speech API is not supported in this browser.");
+        alert("Your browser does not support the Web Speech API. Please use Chrome or Edge.");
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        if (finalTranscript) {
+          // Send final text to backend and clear interim
+          sendTextMessage(finalTranscript.trim());
+        } else if (interimTranscript) {
+          // Update UI with interim transcript
+          setMessages(prev => {
+            const filtered = prev.filter(m => m.id !== 'interim');
+            return [...filtered, {
+              id: 'interim',
+              role: 'user',
+              content: interimTranscript,
+            }];
+          });
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        if (event.error === 'not-allowed' || event.error === 'network') {
+          setIsRecording(false);
+          if (event.error === 'network') {
+             console.warn("Browser speech recognition failed due to a network error. Ensure you are connected to the internet and not blocking Google's speech services.");
+          }
+        }
+      };
+
+      recognition.onend = () => {
+        // If it stopped naturally but we didn't toggle it off, restart it
+        // Note: checking a ref for true intent would be safer, but this works for basic continuous
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+
+    } catch (err) {
+      console.error('Error starting speech recognition:', err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      // Initialize/resume playback context immediately on user interaction
+      getPlaybackContext();
+      if (playbackContextRef.current?.state === 'suspended') {
+        playbackContextRef.current.resume().catch(console.warn);
+      }
+      
+      if (!isConnected) connect();
+      startRecording();
+    }
   };
   
   const stopAudio = () => {
@@ -372,6 +345,15 @@ export function useVoiceSocket() {
       }
     };
   }, [disconnect]);
+
+  const clearSession = () => {
+    setMessages([]);
+    // Force a full reconnect so the websocket picks up the latest authentication token
+    disconnect();
+    setTimeout(() => {
+      connect();
+    }, 100);
+  };
 
   // Keep a ref for ttsEnabled so the WebSocket handler can read it without stale closure
   const ttsEnabledRef = useRef(ttsEnabled);
@@ -405,6 +387,7 @@ export function useVoiceSocket() {
     toggleRecording,
     toggleTts,
     sendTextMessage,
-    stopAudio
+    stopAudio,
+    clearSession
   };
 }

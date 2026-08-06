@@ -6,3 +6,4 @@ from langchain_core.messages import BaseMessage
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     context: str # Optional RAG context
+    user_id: str # Required for RAG retrieval

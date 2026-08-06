@@ -11,10 +11,10 @@ class Settings(BaseSettings):
 
     JWT_SECRET_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
 
     LLM_PROVIDER: str = "openai"
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_MODEL: str = "gpt-5.5"
     OLLAMA_BASE_URL: str = ""
 
     GROQ_API_KEY: str = ""

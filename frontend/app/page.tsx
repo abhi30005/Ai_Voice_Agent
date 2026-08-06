@@ -111,7 +111,10 @@ export default function Home() {
           }}
         >
           <TopNav onLogout={handleLogout} activeView={activeView} setActiveView={setActiveView} userEmail={userEmail} />
-          <Sidebar onLogout={handleLogout} activeView={activeView} setActiveView={setActiveView} userEmail={userEmail} />
+          <Sidebar onLogout={handleLogout} onNewSession={() => {
+            voiceSocket.clearSession();
+            setActiveView('dashboard');
+          }} activeView={activeView} setActiveView={setActiveView} userEmail={userEmail} />
 
           {/* Main Content Area */}
           <main className="lg:pl-[336px] px-6 lg:pr-8 pt-28 pb-8 min-h-screen flex">

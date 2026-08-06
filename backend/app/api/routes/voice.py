@@ -10,7 +10,14 @@ router = APIRouter(prefix="/api/voice", tags=["voice"])
 async def get_ws_user(token: str):
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        return payload.get("sub")
+        email = payload.get("sub")
+        if not email:
+            return None
+        from app.database.mongodb import db
+        user = await db.users.find_one({"email": email})
+        if user:
+            return str(user["_id"])
+        return None
     except Exception:
         return None
 
@@ -30,16 +37,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None), con
             message = await websocket.receive_json()
             msg_type = message.get("type")
             
-            if msg_type == "audio_chunk":
-                data = message.get("data")
-                if data:
-                    await pipeline.process_audio_chunk(data)
-                    
-            elif msg_type == "stop_recording":
-                # User pressed the stop/mute button — process whatever is buffered
-                await pipeline.handle_stop_recording()
-                
-            elif msg_type == "text_message":
+            if msg_type == "text_message":
                 # User typed a message — skip STT, go straight to Agent → TTS
                 text = message.get("text", "")
                 if text.strip():

@@ -2,11 +2,13 @@ import { Activity, BookOpen, BrainCircuit, History, LogOut, Network, Plus } from
 
 export function Sidebar({ 
   onLogout,
+  onNewSession,
   activeView = 'dashboard',
   setActiveView,
   userEmail
 }: { 
   onLogout?: () => void;
+  onNewSession?: () => void;
   activeView?: string;
   setActiveView?: (view: string) => void;
   userEmail?: string | null;
@@ -54,7 +56,7 @@ export function Sidebar({
         })}
       </nav>
       <div className="mt-auto space-y-4">
-        <button className="w-full py-4 bg-[#7c3aed] text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:shadow-[0_8px_30px_rgba(124,58,237,0.6)] hover:-translate-y-[2px] transition-all group">
+        <button onClick={onNewSession} className="w-full py-4 bg-[#7c3aed] text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:shadow-[0_8px_30px_rgba(124,58,237,0.6)] hover:-translate-y-[2px] transition-all group">
           <Plus className="w-5 h-5 transition-transform group-hover:rotate-90" />
           <span className="text-sm uppercase tracking-widest">New Session</span>
         </button>

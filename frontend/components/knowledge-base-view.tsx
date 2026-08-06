@@ -24,6 +24,17 @@ export function KnowledgeBaseView() {
     fetchDocs();
   }, []);
 
+  useEffect(() => {
+    const hasPending = documents.some(doc => !doc.indexed);
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      fetchDocs();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [documents]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
