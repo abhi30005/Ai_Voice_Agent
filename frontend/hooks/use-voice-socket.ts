@@ -26,6 +26,7 @@ export function useVoiceSocket() {
   
   // Web Speech API reference
   const recognitionRef = useRef<any>(null);
+  const shouldRecordRef = useRef<boolean>(false);
 
   // Separate playback context — never share with recording
   const playbackContextRef = useRef<AudioContext | null>(null);
@@ -238,6 +239,7 @@ export function useVoiceSocket() {
       }
 
       const recognition = new SpeechRecognition();
+      shouldRecordRef.current = true;
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
@@ -278,6 +280,7 @@ export function useVoiceSocket() {
         console.error("Speech recognition error", event.error);
         if (event.error === 'not-allowed' || event.error === 'network') {
           setIsRecording(false);
+          shouldRecordRef.current = false;
           if (event.error === 'network') {
              console.warn("Browser speech recognition failed due to a network error. Ensure you are connected to the internet and not blocking Google's speech services.");
           }
@@ -286,8 +289,17 @@ export function useVoiceSocket() {
 
       recognition.onend = () => {
         // If it stopped naturally but we didn't toggle it off, restart it
-        // Note: checking a ref for true intent would be safer, but this works for basic continuous
-        setIsRecording(false);
+        if (shouldRecordRef.current) {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error('Failed to restart recognition:', e);
+            setIsRecording(false);
+            shouldRecordRef.current = false;
+          }
+        } else {
+          setIsRecording(false);
+        }
       };
 
       recognitionRef.current = recognition;
@@ -299,6 +311,7 @@ export function useVoiceSocket() {
   };
 
   const stopRecording = () => {
+    shouldRecordRef.current = false;
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
