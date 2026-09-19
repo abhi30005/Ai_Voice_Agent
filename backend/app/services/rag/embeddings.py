@@ -1,11 +1,12 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from app.config import settings
 
 class EmbeddingsProvider:
     def __init__(self):
-        # Initialize a lightweight, free local embedding model
-        # all-MiniLM-L6-v2 is fast and works well for general RAG tasks
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
+        # Using OpenAI embeddings to save RAM and avoid OOM on Render
+        self.embeddings = OpenAIEmbeddings(
+            openai_api_key=settings.OPENAI_API_KEY,
+            model="text-embedding-3-small" # Fast and cheap model
         )
         
     def get_embeddings(self):

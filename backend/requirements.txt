@@ -14,9 +14,7 @@ langchain-core
 langchain-openai
 langchain-groq
 langchain-community
-langchain-huggingface
 chromadb
-sentence-transformers
 numpy
 httpx
 gTTS
