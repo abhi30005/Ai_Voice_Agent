@@ -109,7 +109,8 @@ export function useVoiceSocket() {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) return;
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('vocalis_token') : '';
-    const wsUrl = `ws://localhost:8000/api/voice/ws${token ? `?token=${token}` : ''}`;
+    const baseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/api';
+    const wsUrl = `${baseUrl}/voice/ws${token ? `?token=${token}` : ''}`;
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {

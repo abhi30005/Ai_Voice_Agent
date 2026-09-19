@@ -45,7 +45,8 @@ export function KnowledgeBaseView() {
 
     try {
       const token = localStorage.getItem('vocalis_token');
-      await fetch('http://localhost:8000/api/documents/upload', {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+      await fetch(`${baseUrl}/documents/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

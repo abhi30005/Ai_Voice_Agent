@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Voice Agent"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "change-me"
+    ALLOWED_ORIGINS: str = "*" # Comma-separated list for production
 
     MONGODB_URI: str = ""
     MONGODB_DATABASE: str = "ai_voice_agent"

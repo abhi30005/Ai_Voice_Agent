@@ -27,9 +27,11 @@ app.include_router(documents.router)
 app.include_router(settings_route.router)
 app.include_router(analytics.router)
 
+origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict this
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
